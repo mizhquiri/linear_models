@@ -1,0 +1,217 @@
+---
+title: "Linear Models"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(rvest)
+library(httr)
+library(p8105.datasets)
+
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+Prop test: If i have this many tests and this many samples, what is the estimated proportion and accompanying confidence intervals 
+ 
+prop.test(successes,trials)  gives you estimate & UL/LL of the CI
+
+- you may need to count the #s of homicides, aggregate total # of homicides, do prop test, iterate into a function
+
+```{r}
+ prop.test(5, 10)
+```
+
+Protip -- start with one city when begining your analyses --> then do your functions
+
+##Linear Models
+
+- FYI removed Staten Island due to being too few N for regression
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+
+## Fit the first model
+
+- sometimes you might want to save the equation as something more interpretable than "fit"
+- you start plugging in the predictors as is 
+
+
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+
+fit
+```
+
+If you print the output: NOT a DF & by default just tells you the model and coefficients 
+
+- technically sure you can do summary(fit)$coef you could get some coefficients....but guess what is better:
+
+- get your dataframe
+```{r}
+
+fit %>% 
+  broom::tidy() %>%
+  mutate(
+    term = str_replace(term, "borough", "Borough: ")
+  ) %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 2)
+```
+ 
+- notice how it has created Bronx as the reference group
+- How can you change the reference group? 
+
+
+Notice that borough = character variable 
+Let's change it up!
+
+Well, first you have to prepare fit if the first thing is not a dataframe because it wants to create it 
+
+```{r}
+fit = 
+  nyc_airbnb %>% 
+  lm(price ~ stars + borough, data = .)
+
+```
+
+So to actually change it:
+
+_figure out why he had the stars transformation_ 
+
+fct_infreq = most common frequency --> sets the most common as level 1
+Whatever is factor level 1 becomes the reference group 
+
+- broom::glance() is excellent for Rsquared and adjusted square
+- AND it's a dataframe 
+```{r}
+
+fit = 
+  nyc_airbnb %>% 
+  mutate(
+    borough = fct_infreq(borough)
+  ) %>% 
+  lm(price ~ stars + borough, data = .)
+
+fit %>% 
+    broom::tidy() %>%
+  mutate(
+    term = str_replace(term, "borough", "Borough: ")
+  ) %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 2)
+
+fit %>% 
+  broom::glance() %>% 
+  select(AIC)
+```
+
+
+## Diagnostics
+
+- yes, always do this
+- getting residuals 
+
+- pckge asks what dataset did you get models 
+
+add_residuals(dataset, linearmodel)
+
+```{r}
+
+modelr::add_residuals(nyc_airbnb, fit)
+```
+```{r}
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = stars, y = resid)) + 
+  geom_point()
+
+```
+
+...constant variance assumption doesn't work here (gets more variance in 5
+if you are doing H0 then you have to worry about constant
+maybe you want to exclude some outliers)
+
+Before you fit any models
+ - inspect 
+ - after you do that, inspect again
+ 
+```{r}
+nyc_airbnb %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = borough, y = resid)) + geom_violin()
+```
+
+## Hypothesis testing
+
+one coefficient (let's say stars)
+
+```{r}
+fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+
+fit %>% 
+  broom::tidy()
+
+
+anova(fit_null, fit_alt) %>% 
+  broom::tidy()
+```
+
+## Interactions...?
+
+Room type by borough: multiplying factor variables by factor variables
+ 
+- in a lot of cases exploratory analyses is good enough
+- more formally you should create hypothesis testing
+
+```{r}
+nyc_airbnb %>% 
+  lm(price ~ stars * borough + room_type * borough, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+```
+
+
+So... can we fit models by borough...?
+
+at that stage, called my column "df" that has datasets
+pull models is a list of linear models! 
+
+
+
+```{r, eval = FALSE}
+nyc_airbnb %>% 
+  nest(df = -borough) %>% 
+ mutate(
+    models = map(data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)) %>% 
+  select(borough, results) %>% 
+  pull(models)
+```
+
