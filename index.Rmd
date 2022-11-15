@@ -1,0 +1,62 @@
+---
+Name: 
+title: "My awesome website"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+right: 
+- text: "About"
+  href: about.html
+- icon: fa-envelope fa-lg
+  href: mailto:<you@youremail.com
+- icon: fa-solid fa-mouse-field
+  href: https://github.com/provide
+---
+
+
+# This is an intro to building a website
+
+
+_How to insert a link to an image or use a local image_
+
+These are the Northern lights in Iceland in October 2019
+
+![](images/DSC07762.jpg)
+
+![](https://media.giphy.com/media/drXGoW1iudhKw/giphy.gif)
+
+
+_How to insert a link_
+
+Here's some text. I like the internet. I use
+[google](https://www.google.com/) all the time to do data science.
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+sample = rnorm(1000)
+mean(sample)
+```
+
+_So how can we add subpages_
+
+1. Created yml sitewide
+2. Make a copy and update the title
+
+Here's a direct link to the about page: [about](about.html)
+
+
+I also made a bonus [extra page](extra_page.html)
+
+
+Point to a relative path on a server with a file:
+
+[about][about.html]
+
+Can you position your image to a different place in the webpage:
+<img src = "images/ted.jpg" style=width
+
