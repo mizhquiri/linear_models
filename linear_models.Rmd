@@ -37,7 +37,7 @@ prop.test(successes,trials)  gives you estimate & UL/LL of the CI
  prop.test(5, 10)
 ```
 
-Protip -- start with one city when begining your analyses --> then do your functions
+Protip -- start with one city when beginning your analyses --> then do your functions
 
 ##Linear Models
 
