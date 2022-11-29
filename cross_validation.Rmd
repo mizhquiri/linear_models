@@ -3,298 +3,287 @@ title: "Cross Validation"
 output: github_document
 ---
 
-```{r, include = FALSE, messsage=FALSE, warning=FALSE}
+```{r setup, include=FALSE}
 library(tidyverse)
+library(mgcv)
+library(modelr)
 
+library(viridis)
 
 knitr::opts_chunk$set(
 	echo = TRUE,
 	warning = FALSE,
-  fig.width = 6,
-  fig.asp = .6,
+	fig.width = 8, 
+  fig.height = 6,
   out.width = "90%"
 )
-
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
-
 
 options(
   ggplot2.continuous.colour = "viridis",
   ggplot2.continuous.fill = "viridis"
 )
+
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 
-
-set.seed(1) #sets a seed for reproducibility
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
 
-##Simulations
+## Step one 
 
-Here's our function from before. 
+Cross validation "by hand" on simulated data.
 
-mu = true_mean
-sigma = std_dev
-
-rnorm: generate a random dataset from a normal distribution in which the true mean
-is defined as is the standard deviation
-
-the dataset sample produces the estimated mean and estimated st dev
+runif -> random uniform distribution 
+adding runif so that x and y have a non linear relationship
 
 ```{r}
-sim_mean_sd = function(n_obs, mu = 7, sigma = 4) {
+set.seed(1)
 
-  x = rnorm(n_obs, mean = mu, sd = sigma)
+nonlin_df = 
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10 * (x - .3) ^ 2 + rnorm(100, 0, .3)
+  )
 
-tibble(
-  mu_hat = mean(x),
-  sigma_hat = sd(x)
-)
-
-}
+nonlin_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point()
 ```
 
-How did we use this before?
-- you can run/rerun the code --> will be approximately the true mu and sigma
-- everytune = 1 manual rerun
+Let's get this by hand.
+
+can also do train_df %>% arrange(id)to demo that you do not get sequential rows
 
 ```{r}
-sim_mean_sd(n_obs = 30)
+train_df = sample_n(nonlin_df, 80)
+test_df = anti_join(nonlin_df, train_df, by = "id")
+```
+
+_overlaying your two datasets_ 
+
+```{r}
+train_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_point(data = test_df, color = "red")
 ```
 
 
-_Okay, let's scale this up._
+Let's try to fit three models.
 
-- `Forloop`
+- have nothing to do with my testing data
 
-output = vector("list", length = 100) --> created an output vector with a 100 empty spots
-
-ran the sim_mean_sd function 100 x w/ number of output = 30 
-
-saved each results as an output ---> binded rows 
-
+linear model should not be complex enough/ was constructed to not fix;  y = x
+smooth = just right; gam function y = smooth function of x (smooth - fit) - treating x as there is some non linearity
+wiggly = too wild' breaking the nonlinearity / adding too much nonlinearity k = X = 30, sp = 10e - 6 -- telling you to NOT smooth things --> make sure it is very wiggly
 
 ```{r}
-output = vector("list", 100)
-
-for (i in 1:100) {
-  output[[i]] = sim_mean_sd(n_obs = 30)
-}
-
-sim_results = bind_rows(output)
+linear_mod = lm(y ~ x, data = train_df)
+smooth_mod = mgcv::gam(y ~ s(x), data = train_df)
+wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
 ```
 
-### You could also use a dataframe leveraging list columns ti keep track
 
-- we saw in listcols_df_complete how these might be done using map(function, data) where each row of the data was distinct 
+Let's see the results. 
+
+Note: mgcv does smooth fits
+
+```{r}
+train_df %>% 
+  add_predictions(linear_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red")
+```
 
 
-here, the input/x = a constant
-
-_Why use expand grid_
-- give me all psoitive combos given this input
-- in this case leveraged because I wanted a copy of all samples that are being worked on 
-- this is the differentiator in which you actually created the dataframe to begin with whereas before there was an existing dataframe
-- the dataframe is "built" different
-- I want an input column that is the SAME everywhere
-- keeps track of which iteration you are on and which variable to use 
-
-_map(input_name, function)_
- - notice that here the input is a constant
- - shorter line of code 
+```{r}
+train_df %>% 
+  add_predictions(smooth_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_point(data = test_df, color = "red") + 
+  geom_line(aes(y = pred), color = "red")
+```
 
 
 
 ```{r}
-sim_results_df = 
-  
-  expand_grid(
-    sample_size = 30, 
-    iteration = 1:100
-) %>% 
+train_df %>% 
+  add_predictions(wiggly_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_point(data = test_df, color = "red") + 
+  geom_line(aes(y = pred), color = "red")
+```
+Okay so how would you pick? Graphically clear choice. But now let;s be less subjective (see parameters etc). 
+
+
+Let's make predictions and compute RMSEs. 
+
+* we are adding predictions / to get fitted values based on the training data --> get rmse
+```{r}
+test_df %>% add_predictions(linear_mod)
+```
+#Faster way to get RMSE
+
+- RMSE is prediction error (you want lower)
+
+
+```{r}
+rmse(linear_mod, test_df)
+rmse(smooth_mod, test_df)
+rmse(wiggly_mod, test_df)
+```
+
+## Can we iterate ..?
+
+Let's test to see if we can model this again -- is this a fluke
+
+crossv_mc -- does not create a df
+it stores a df 
+it just changes the row #s 
+
+
+```{r}
+cv_df = 
+  crossv_mc(nonlin_df, 100)#do cross validation on my df 100x
+
+cv_df %>% pull(train) %>% .[[1]] #pull out first element of your list of your training dataset
+
+
+#calling it a class of object resample in which you don't have to keep track of your dataframe and only keep track of which row is in your dataset (gives weird object)--> create into tibble (keeps track of all of your testing splits)
+
+cv_df %>% pull(train) %>% .[[1]] %>% as_tibble
+
+# now to fit the model to the data that we are interested in
+```
+
+now to fit the models that we care about to the data that we are interested in 
+
+
+in each dataset i want to fit a lm
+and get the rmse that comes out of each lm that comes from the testing dataset
+
+- now here you just use the tibbles 
+
+```{r}
+cv_df = 
+  crossv_mc(nonlin_df, 100) %>% #do cross validation on my df 100x
   mutate(
-    estimate_df = map(sample_size, sim_mean_sd)
+    train = map(train, as_tibble),
+    test = map(test, as_tibble), #this will remove the "resample" tibbles
+  ) %>% #now you just got dataframes here (resample the tibbles)
+  mutate(
+    linear_fits = map(.x = train, ~lm(y ~ x, data = .x)),
+    smooth_fits = map(.x = train, ~mgcv::gam(y ~ s(x), data = .x)),
+    wiggly_fits = map(.x = train, ~mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
+  ) %>% ##each time i fit a lm the training data is changing a little bit corresponding to the first training split and subsequent training split
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_fits, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(.x = smooth_fits, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2_dbl(.x = wiggly_fits, .y = test, ~rmse(model = .x, data = .y)),
   )
 ```
 
-_you might want to unnest the dataframe_
-
-- so you can have for the first sample size, you can uncollapse the tibble that is produced by the function & have mu-hat and sigma-hat appear
-- you can now work with your dataframe! 
+Make a box plot ...
 
 ```{r}
-sim_results_df = 
-  expand_grid(
-    sample_size = 30,
-    iter = 1:100
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
   ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot()
+```
+
+## Try it on a real dataset
+
+
+```{r}
+growth_df = read_csv("data/nepalese_children.csv")
+```
+
+
+```{r}
+growth_df %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = .3)
+```
+
+Brief aside on piecewise linear models.
+
+```{r}
+growth_df = 
+  growth_df %>% 
   mutate(
-    estimate_df = map(sample_size, sim_mean_sd)
-  ) %>% 
-  unnest(estimate_df)
-```
-FYI you could have said: .x = sample_size, ~sim_mean_sd(n_obs = .x)
-
-The tilde means that I'm telling you to put it INTO here 
-
-
-purr package = .x and .y are CUMPOLSORY
-you should not have anywhere else called .x or .y
-
-_What does map allow us to do:_
-- take the first element and apply that function and do it all subsequently 
-
-
-_sim_results_df_
-
-- when I gnenerate a 100 datasets, with a true mean of X and a sample mean will vary over time
-```{r}
-sim_results_df %>% 
-  ggplot(aes(x = sample_size, y = mu_hat)) + 
-  geom_violin()
-```
-
-
-```{r}
-sim_results_df %>% 
-  ggplot(aes(x = mu_hat)) + 
-  geom_density()
-```
-
-- above is a distribution of sample means when you generated 100 datasets with a true mean of 7 and sdev of 4 from a normally distributed sample
-
-- average sample mean and standard error should =  the mu-hat / sqrt(n)
-_you can test this!_
-
-- AKA you can now test to see if the sample average looks like what it is supposd to do 
-- you could do binorm not rnorm (how big does the sample n have to be for you to make CLT work)
-
-- CLT applications
-
-
-## Change the sample size
-
-- Can you model what happens when your sample size gets bigger? 
-- see CLT formula 
-- when you map across that sample size column you gor row by row and compute the mean 
-
-I need an input list with lots of sample sizes
-- mutate function will apply row by row 
-
-```{r}
-sim_results_df = 
-  expand_grid(
-    sample_size = c(30, 60, 120, 240),
-    iter = 1:100
-  ) %>% 
-  mutate(
-    estimate_df = map(sample_size, sim_mean_sd)
-  ) %>% 
-  unnest(estimate_df)
-```
-
-
-_We can now SEE what is the distribution_
-
-FYI violin plot assumes x axis to not be a number
-Therefore: convert to number
-
-fct inorder = sample size as it appears in my df = command
-
-```{r}
-sim_results_df %>% 
-  mutate(
-    sample_size = str_c("N = ", sample_size),
-    sample_size = fct_inorder(sample_size)
-  ) %>% 
-  ggplot(aes(x = sample_size, y = mu_hat)) + 
-  geom_violin()
-```
-
-```{r}
-sim_results_df %>% 
-  mutate(
-    sample_size = str_c("N = ", sample_size),
-    sample_size = fct_inorder(sample_size)
-  ) %>%
-  group_by(sample_size) %>% 
-  summarize(
-    emp_st_err = sd(mu_hat)
+    weight_pwl = (weight > 7) * (weight - 7)
   )
 ```
 
-emp_st_err = empirical standard error ~ true st error = true_mean/ sqrt(n_obs)
-- tested each one manually -- proven to be approximately close!
-
-
-## CHANGE 2 inputs: You can also test to see what happens when you vary sigma
-
-
-- added a new combinatrice -- 6, 3
-- how do i map over 2 inputs --> map2
-- make sure to make explicit how the function should be mapped using the syntax of the function:
-
-sim_mean_sd = function(n_obs, mu = 7, sigma = 4) 
-
-- if mapping implicitly:
-
-position matters:
-figure out which parameter goes to which place:
-n_obs = 1st position
-mu = 2nd position
-sigma = 3rd posiiton
-
-if you are not explicit it will assume the 1st position variable is being efined
-* applies to map as well
-
-- yes you have to name the tilde
-  -- take the .x and make it show up over here (lol, syntax)
-  
-- . x an . y are compulsory
-
-
-map(.x = sample_size, ~sim_mean_sd(n_obs = .x))
 
 ```{r}
-sim_results_df = 
-  expand_grid(
-    sample_size = c(30, 60, 120, 240),
-    true_sigma = c(6, 3),
-    iter = 1:1000
-  ) %>% 
-  mutate(
-    estimate_df = 
-      map2(.x = sample_size, .y = true_sigma, ~sim_mean_sd(n_obs = .x, sigma = .y))
-  ) %>% 
-  unnest(estimate_df)
+linear_model = lm(armc ~ weight, data = growth_df)
+pwl_model = lm(armc ~ weight + weight_pwl, data = growth_df)
+smooth_model = mgcv::gam(armc ~ s(weight), data = growth_df)
 
 ```
 
-Above you see that the syntax is 
-map2 = function ONLY for two arguments; notice that you have to do it explicitly
 
-_power of simulations is that you can model and test theories etc_ 
 
-```{r, cache = TRUE}
-sim_results_df %>% 
-  mutate(
-    sample_size = str_c("N = ", sample_size),
-    sample_size = fct_inorder(sample_size)) %>% 
-  ggplot(aes(x = sample_size, y = mu_hat, fill = sample_size)) + 
-  geom_violin() + 
-  facet_grid(. ~ true_sigma)
+```{r}
+growth_df %>% 
+  add_predictions(smooth_model) %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = .3) + 
+  geom_line(aes(y = pred), color = "red")
 ```
-For any true sigma, (3 or 6), increasing the sample n narrows the distribution in a way that corresponds to the sqrt (n_obs). from 3 to 6 everything gets about 2x as wide
+
+```{r}
+cv_df = 
+  crossv_mc(growth_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble),
+  )
+  
+
+cv_df = 
+  cv_df %>% 
+  mutate(
+    linear_fits = map(.x = train, ~lm(armc ~ weight, data = .x)),
+    pwl_fits =    map(.x = train, ~lm(armc ~ weight + weight_pwl, data = .x)),
+    smooth_fits = map(.x = train, ~mgcv::gam(armc ~ s(weight), data = .x))
+  ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_fits, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_pwl =    map2_dbl(.x = pwl_fits,    .y = test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(.x = smooth_fits, .y = test, ~rmse(model = .x, data = .y))
+  )
+```
 
 
-_Concluding tips_
+Let's look at the results
 
-- start with a smaller iteration to have it run more quickly
-- consider cache rmd code chunk if needed 
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot()
+```
 
-  - save everytime but comes with a caveat
-  - will not rerun unless you rerun here 
-  - if this code chunk is dependent on another R will not know you want to rerun things now that you have changed something vital upstream
+
 
 
