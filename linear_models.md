@@ -107,7 +107,7 @@ fit =
   lm(price ~ stars + borough, data = .)
 ```
 
-So to actually change it:
+So to actually change factors/ reference
 
 *figure out why he had the stars transformation*
 
@@ -161,7 +161,7 @@ fit %>%
 
 - pckge asks what dataset did you get models
 
-add_residuals(dataset, linearmodel)
+*TEMPLATE* add_residuals(dataset, linearmodel)
 
 ``` r
 modelr::add_residuals(nyc_airbnb, fit)
@@ -210,11 +210,11 @@ nyc_airbnb %>%
 
 ## Hypothesis testing
 
-one coefficient (let’s say stars)
+one coefficient (let’s say stars) = null model
 
 ``` r
-fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
-fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+fit_null = lm(price ~ stars, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough, data = nyc_airbnb)
 
 fit %>% 
   broom::tidy()
@@ -230,6 +230,9 @@ fit %>%
     ## 5 boroughBronx       -90.3      8.57    -10.5  6.64e- 26
 
 ``` r
+## if you want to compare h-null and h-alt: F-test to get SS: ANOVA
+
+
 anova(fit_null, fit_alt) %>% 
   broom::tidy()
 ```
@@ -237,56 +240,101 @@ anova(fit_null, fit_alt) %>%
     ## Warning: Unknown or uninitialised column: `term`.
 
     ## # A tibble: 2 × 7
-    ##   term                              df.re…¹    rss    df   sumsq stati…² p.value
-    ##   <chr>                               <dbl>  <dbl> <dbl>   <dbl>   <dbl>   <dbl>
-    ## 1 price ~ stars + borough             30525 1.01e9    NA NA          NA       NA
-    ## 2 price ~ stars + borough + room_t…   30523 9.21e8     2  8.42e7   1394.       0
-    ## # … with abbreviated variable names ¹​df.residual, ²​statistic
+    ##   term                    df.residual       rss    df   sumsq stati…¹    p.value
+    ##   <chr>                         <dbl>     <dbl> <dbl>   <dbl>   <dbl>      <dbl>
+    ## 1 price ~ stars                 30528    1.03e9    NA NA          NA  NA        
+    ## 2 price ~ stars + borough       30525    1.01e9     3  2.53e7    256.  7.84e-164
+    ## # … with abbreviated variable name ¹​statistic
+
+``` r
+##evaluate; get very small p value when adding borough in your model 
+## recall that borough is indded multiple levels
+```
 
 ## Interactions…?
 
-Room type by borough: multiplying factor variables by factor variables
+*Room type by borough* : multiplying factor variables by factor
+variables
 
 - in a lot of cases exploratory analyses is good enough
 - more formally you should create hypothesis testing
 
+Answer: what is the effect of room type and does the effect of room type
+vary by borough?
+
 ``` r
-nyc_airbnb %>% 
-  lm(price ~ stars * borough + room_type * borough, data = .) %>% 
+fit = 
+  nyc_airbnb %>% 
+  lm(price ~ stars + borough + room_type * borough, data = .) %>% 
   broom::tidy() %>% 
   knitr::kable(digits = 3)
 ```
 
-| term                                   | estimate | std.error | statistic | p.value |
-|:---------------------------------------|---------:|----------:|----------:|--------:|
-| (Intercept)                            |   90.067 |    75.406 |     1.194 |   0.232 |
-| stars                                  |    4.446 |    16.633 |     0.267 |   0.789 |
-| boroughBrooklyn                        |  -20.439 |    77.117 |    -0.265 |   0.791 |
-| boroughManhattan                       |    5.627 |    77.808 |     0.072 |   0.942 |
-| boroughQueens                          |    1.509 |    83.501 |     0.018 |   0.986 |
-| room_typePrivate room                  |  -52.915 |    17.751 |    -2.981 |   0.003 |
-| room_typeShared room                   |  -70.547 |    41.551 |    -1.698 |   0.090 |
-| stars:boroughBrooklyn                  |   16.525 |    16.982 |     0.973 |   0.331 |
-| stars:boroughManhattan                 |   22.664 |    17.099 |     1.325 |   0.185 |
-| stars:boroughQueens                    |    5.208 |    18.272 |     0.285 |   0.776 |
-| boroughBrooklyn:room_typePrivate room  |  -39.308 |    18.024 |    -2.181 |   0.029 |
-| boroughManhattan:room_typePrivate room |  -71.273 |    18.002 |    -3.959 |   0.000 |
-| boroughQueens:room_typePrivate room    |  -16.341 |    19.020 |    -0.859 |   0.390 |
-| boroughBrooklyn:room_typeShared room   |  -35.292 |    42.942 |    -0.822 |   0.411 |
-| boroughManhattan:room_typeShared room  |  -83.089 |    42.451 |    -1.957 |   0.050 |
-| boroughQueens:room_typeShared room     |  -24.427 |    44.399 |    -0.550 |   0.582 |
+*if YOU WANT TO TEST (HYPOTHESIS) –\> INTERACTIONS ARE NECESSARY*
 
-So… can we fit models by borough…?
+iF YOU ARE simply doing exploratory analysis…then just do separate lin
+reg!
+
+*So… can we fit models by borough…?*
 
 at that stage, called my column “df” that has datasets pull models is a
 list of linear models!
+
+- create a separate df for each boro
+- for each fit a linear model
+
+map function here = taking a data column that has 4 different dfs in it
+and taking first of those and fitting a linear model and go down;
+plugging into the data argument the same thing
+
+And then; %\>% pull(models)
+
+if you want to take out of the df
 
 ``` r
 nyc_airbnb %>% 
   nest(df = -borough) %>% 
  mutate(
-    models = map(data, ~lm(price ~ stars + room_type, data = .x)),
-    results = map(models, broom::tidy)) %>% 
+    models = map(.x = df, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+    ) %>% 
   select(borough, results) %>% 
-  pull(models)
+  unnest(results)
 ```
+
+    ## # A tibble: 16 × 6
+    ##    borough   term                  estimate std.error statistic   p.value
+    ##    <chr>     <chr>                    <dbl>     <dbl>     <dbl>     <dbl>
+    ##  1 Bronx     (Intercept)              90.1      15.2       5.94 5.73e-  9
+    ##  2 Bronx     stars                     4.45      3.35      1.33 1.85e-  1
+    ##  3 Bronx     room_typePrivate room   -52.9       3.57    -14.8  6.21e- 41
+    ##  4 Bronx     room_typeShared room    -70.5       8.36     -8.44 4.16e- 16
+    ##  5 Queens    (Intercept)              91.6      25.8       3.54 4.00e-  4
+    ##  6 Queens    stars                     9.65      5.45      1.77 7.65e-  2
+    ##  7 Queens    room_typePrivate room   -69.3       4.92    -14.1  1.48e- 43
+    ##  8 Queens    room_typeShared room    -95.0      11.3      -8.43 5.52e- 17
+    ##  9 Brooklyn  (Intercept)              69.6      14.0       4.96 7.27e-  7
+    ## 10 Brooklyn  stars                    21.0       2.98      7.05 1.90e- 12
+    ## 11 Brooklyn  room_typePrivate room   -92.2       2.72    -34.0  6.40e-242
+    ## 12 Brooklyn  room_typeShared room   -106.        9.43    -11.2  4.15e- 29
+    ## 13 Manhattan (Intercept)              95.7      22.2       4.31 1.62e-  5
+    ## 14 Manhattan stars                    27.1       4.59      5.91 3.45e-  9
+    ## 15 Manhattan room_typePrivate room  -124.        3.46    -35.8  9.40e-270
+    ## 16 Manhattan room_typeShared room   -154.       10.1     -15.3  2.47e- 52
+
+Quick double check….?
+
+``` r
+nyc_airbnb %>% 
+  filter(borough == "Bronx") %>% 
+  lm(price ~ stars + room_type, data = .) %>% 
+  broom::tidy()
+```
+
+    ## # A tibble: 4 × 5
+    ##   term                  estimate std.error statistic  p.value
+    ##   <chr>                    <dbl>     <dbl>     <dbl>    <dbl>
+    ## 1 (Intercept)              90.1      15.2       5.94 5.73e- 9
+    ## 2 stars                     4.45      3.35      1.33 1.85e- 1
+    ## 3 room_typePrivate room   -52.9       3.57    -14.8  6.21e-41
+    ## 4 room_typeShared room    -70.5       8.36     -8.44 4.16e-16
