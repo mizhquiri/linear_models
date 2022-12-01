@@ -109,15 +109,34 @@ train_df %>%
 ```
 
 
+- Below you see WHY this specific train df does not have a model fit that matches the 
+test df in green
+
+
+If i use the red squiggly to PREDICT the red points in some cases ok, in some cases NO 
 
 ```{r}
 train_df %>% 
   add_predictions(wiggly_mod) %>% 
   ggplot(aes(x = x, y = y)) + 
   geom_point() + 
-  geom_point(data = test_df, color = "red") + 
+  geom_point(data = test_df, color = "green") + 
   geom_line(aes(y = pred), color = "red")
 ```
+
+
+
+
+Which of these fits is going to do a better job at getting the red line to go throuh the green dots
+```{r}
+train_df %>% 
+  add_predictions(smooth_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_point(data = test_df, color = "green") + 
+  geom_line(aes(y = pred), color = "red")
+```
+
 Okay so how would you pick? Graphically clear choice. But now let;s be less subjective (see parameters etc). 
 
 
@@ -131,12 +150,34 @@ test_df %>% add_predictions(linear_mod)
 
 - RMSE is prediction error (you want lower)
 
+Root Mean Square Error In R, The root mean square error (RMSE) allows us to measure how far predicted values are from observed values in a regression analysis.
+
+In other words, how concentrated the data around the line of best fit.
+
+RMSE = √[ Σ(Pi – Oi)2 / n ]
+
+where:
+
+Σ symbol indicates “sum”
+Pi is the predicted value for the ith observation in the dataset
+Oi is the observed value for the ith observation in the dataset
+n is the sample size
+
+what is the sum of squared for the residuals red line (train) and the dark points are not
+
+
+_rmse(actual, predicted)_
 
 ```{r}
 rmse(linear_mod, test_df)
 rmse(smooth_mod, test_df)
 rmse(wiggly_mod, test_df)
 ```
+THis is very much like 
+- list col 
+- fit models going against the df
+- and be able to process rmse
+
 
 ## Can we iterate ..?
 
@@ -149,7 +190,7 @@ it just changes the row #s
 
 ```{r}
 cv_df = 
-  crossv_mc(nonlin_df, 100)#do cross validation on my df 100x
+  crossv_mc(nonlin_df, 100)#do cross validation on my df 100x in which you get a training / testing split differently each iteration --> computes resample list instead of a df
 
 cv_df %>% pull(train) %>% .[[1]] #pull out first element of your list of your training dataset
 
@@ -168,24 +209,25 @@ in each dataset i want to fit a lm
 and get the rmse that comes out of each lm that comes from the testing dataset
 
 - now here you just use the tibbles 
+- rmse needs the model and the data for which you want the model to be computed / data that you are testing on 
 
 ```{r}
 cv_df = 
-  crossv_mc(nonlin_df, 100) %>% #do cross validation on my df 100x
+  crossv_mc(nonlin_df, 100) %>% #creates a resample object instead of df. it creates a col called train and col called test 
   mutate(
     train = map(train, as_tibble),
     test = map(test, as_tibble), #this will remove the "resample" tibbles
-  ) %>% #now you just got dataframes here (resample the tibbles)
+  ) %>% #now you just got dataframes here so that you can work with it
   mutate(
     linear_fits = map(.x = train, ~lm(y ~ x, data = .x)),
     smooth_fits = map(.x = train, ~mgcv::gam(y ~ s(x), data = .x)),
     wiggly_fits = map(.x = train, ~mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
-  ) %>% ##each time i fit a lm the training data is changing a little bit corresponding to the first training split and subsequent training split
+  ) %>% ##add a col called linear fits in which we are fitting a given linear model [y = x] to train df and add a column that contains that linear model; you get different model fits each time b.c training dataset is different each time. that is applying each time i fit a lm the training data is changing a little bit corresponding to the first training split and subsequent training split
   mutate(
     rmse_linear = map2_dbl(.x = linear_fits, .y = test, ~rmse(model = .x, data = .y)),
     rmse_smooth = map2_dbl(.x = smooth_fits, .y = test, ~rmse(model = .x, data = .y)),
     rmse_wiggly = map2_dbl(.x = wiggly_fits, .y = test, ~rmse(model = .x, data = .y)),
-  )
+  )#does this given model fit make a good prediction for the test data
 ```
 
 Make a box plot ...

@@ -1,0 +1,92 @@
+---
+title: "Shiny Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(p8105.datasets)
+library(flexdashboard)
+library(plotly)
+library(viridis)
+library(shiny)
+```
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>%
+  rename(latitude = lat, longitude = long) %>%
+  select(
+    boro = neighbourhood_group, neighbourhood, stars, price, room_type,
+    latitude, longitude) %>%
+  filter(!is.na(stars))
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+#this takes out the list and creates a vector --> only keep the distinct versions of it
+boros = nyc_airbnb %>% distinct(boro) %>% pull()
+
+#h3 = headersize3 --> makes a header font
+
+
+# selectInput widget
+
+selectInput(
+  "boro_choice", 
+  label = h3("Select boro"),
+  choices = boros, selected = "Manhattan")
+
+##creates a list called input 
+## in that list there is something called boro_choice
+## everytime that input list changes when someone inputs something 
+
+## how to access something that is in that list 
+##ERROR: <insert here> 
+
+##Now onto sliders! 
+
+nyc_airbnb %>% 
+  filter(boro = "Manhatttan") %>% 
+  ggplot(aes(x = lat, y = long, color = price)) + geom_point()
+
+##[[ 1st bracket go to list, next bracket says go to that element]]
+nyc_airbnb %>% 
+  filter(boro == input[["borough_choice"]],
+  Manhattan") %>% 
+  plot_ly(x = ~lat, y = ~long, color = ~price, 
+          type = "scatter", mode = "markers", alpha = .5)
+
+## everything is the same EXCEPT for the fact that you are filtering leveraging an input list 
+## you would drop render around the plotly code as a renderPlotly()
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+
+```
+
+### Chart C
+
+```{r}
+
+```
+
